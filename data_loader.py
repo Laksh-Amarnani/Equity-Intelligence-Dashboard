@@ -49,3 +49,38 @@ def get_stock_info(ticker: str) -> dict:
         }
     except Exception:
         return {}
+
+def engineer_features(ticker: str, period: str = "2y") -> pd.DataFrame:
+    prices = get_price_data([ticker], period=period)
+    df = pd.DataFrame()
+    df["price"] = prices[ticker]
+    df["volume"] = yf.download(ticker, period=period, auto_adjust=False, progress=False)["Volume"]
+
+    df["return"] = df["close"].pct_change()
+    df["log_return"] = np.log(df["close"] / df["close"].shift(1))
+
+    for lag in [1, 2, 3, 5]:
+        df[f"lag_{lag}"] = df["return"].shift(lag)
+
+    df["rolling_mean_5"] = df["return"].rolling(5).mean()
+    df["rolling_std_5"] = df["return"].rolling(5).std()
+    df["rolling_mean_20"] = df["return"].rolling(20).mean()
+    df["rolling_std_20"] = df["return"].rolling(20).std()
+
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss
+    df["rsi"] = 100 - (100 / (1 + rs))
+
+    df["volume_ratio"] = df["volume"] / df["volume"].rolling(20).mean()
+
+    df["ma_20"] = df["close"].rolling(20).mean()
+    df["ma_50"] = df["close"].rolling(50).mean()
+    df["dist_ma20"] = (df["close"] - df["ma_20"]) / df["ma_20"]
+    df["dist_ma50"] = (df["close"] - df["ma_50"]) / df["ma_50"]
+
+    df["target"] = (df["return"].shift(-1) > 0).astype(int)
+
+    df.dropna(inplace=True)
+    return df
