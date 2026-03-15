@@ -35,3 +35,25 @@ def confidence_interval_mean(data: np.ndarray, confidence:float=0.95) -> dict:
         "confidence": confidence,
         "method": method,
     }
+
+def confidence_interval_volatility(data: np.ndarray, confidence:float=0.95) -> dict:
+    n=len(data)
+    var=np.var(data, ddof=1)
+    df=n-1
+    alpha  = 1 - confidence
+
+    chi2_lower = chi2.ppf(alpha / 2, df)
+    chi2_upper = chi2.ppf(1 - alpha / 2, df)
+
+    var_lower=(df * var) / chi2_lower
+    var_upper=(df * var) / chi2_upper
+
+    return {
+        "sample_variance": round(var,8),
+        "sample_std":      round(np.sqrt(var),6),
+        "variance_lower":  round(var_lower,8),
+        "variance_upper":  round(var_upper,8),
+        "std_lower":       round(np.sqrt(var_lower), 6),
+        "std_upper":       round(np.sqrt(var_upper), 6),
+        "confidence":      confidence,
+    }
