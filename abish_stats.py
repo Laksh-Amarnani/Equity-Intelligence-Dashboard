@@ -88,3 +88,130 @@ def plot_likelihood_surface(data: np.ndarray, mu_range: tuple = None) -> dict:
         "mle_mu":         np.mean(data),
         "peak_ll":        max(log_likes),
     }
+
+#Hypothesis Testing
+def z_test_mean(data: np.ndarray, pop_mean: float,pop_std:float, alpha: float = 0.05, tail: str = "two") -> dict:
+    n = len(data)
+    x_bar = np.mean(data)
+    se = pop_std / np.sqrt(n)
+    z_stat = (x_bar - pop_mean) / se
+    if tail == "two":
+        p_value = 2 * (1 - norm.cdf(abs(z_stat)))
+        z_crit = norm.ppf(1 - alpha / 2)
+    elif tail == "right":
+        p_value = 1 - norm.cdf(z_stat)
+        z_crit = norm.ppf(1 - alpha)
+    else:
+        p_value = norm.cdf(z_stat)
+        z_crit = -norm.ppf(1-alpha)
+
+    reject = p_value < alpha
+    return {
+        "test":         "Z-Test (One Sample)",
+        "z_statistic":  round(z_stat, 4),
+        "z_critical":   round(z_crit, 4),
+        "p_value":      round(p_value, 6),
+        "alpha":        alpha,
+        "reject_H0":    reject,
+        "conclusion":   (
+            f"{'REJECT' if reject else 'FAIL TO REJECT'} H₀. "
+            f"The mean return {'IS' if reject else 'IS NOT'} "
+            f"significantly different from {pop_mean:.4%}."
+        ),
+    }
+def t_test_one_sample(data: np.ndarray, pop_mean: float, alpha: float = 0.05) -> dict:
+    t_stat, p_value = ttest_1samp(data, pop_mean)
+    df      = len(data) - 1
+    t_crit  = t_dist.ppf(1 - alpha / 2, df)
+    reject  = p_value < alpha
+
+    return {
+        "test":        "One-Sample t-Test",
+        "t_statistic": round(t_stat, 4),
+        "t_critical":  round(t_crit, 4),
+        "p_value":     round(p_value, 6),
+        "df":          df,
+        "alpha":       alpha,
+        "reject_H0":   reject,
+        "conclusion":  (
+            f"{'REJECT' if reject else 'FAIL TO REJECT'} H₀. "
+            f"Mean return {'IS' if reject else 'IS NOT'} "
+            f"significantly different from {pop_mean:.4%}."
+        ),
+    }
+def t_test_two_sample(data1: np.ndarray, data2: np.ndarray,label1: str="Stock A", label2: str="Stock B", alpha: float = 0.05) -> dict:
+    t_stat, p_value = ttest_ind(data1, data2, equal_var=False)
+    reject = p_value < alpha
+
+    return {
+        "test":          "Two-Sample Welch's t-Test",
+        "label1":        label1,
+        "label2":        label2,
+        "mean1":         round(np.mean(data1), 6),
+        "mean2":         round(np.mean(data2), 6),
+        "t_statistic":   round(t_stat, 4),
+        "p_value":       round(p_value, 6),
+        "alpha":         alpha,
+        "reject_H0":     reject,
+        "conclusion":    (
+            f"{'REJECT' if reject else 'FAIL TO REJECT'} H₀. "
+            f"Returns of {label1} and {label2} are "
+            f"{'SIGNIFICANTLY DIFFERENT' if reject else 'NOT significantly different'}."
+        ),
+    }
+def t_test_paired(data1: np.ndarray, data2: np.ndarray, label1: str="Before", label2: str="After", alpha: float = 0.05) -> dict:
+    n=min(len(data1), len(data2))
+    t_stat, p_value = ttest_rel(data1[:n], data2[:n])
+    reject = p_value < alpha
+
+    return {
+        "test":          "Paired t-Test",
+        "label1":        label1,
+        "label2":        label2,
+        "mean_diff":     round(np.mean(data1[:n] - data2[:n]), 6),
+        "t_statistic":   round(t_stat, 4),
+        "p_value":       round(p_value, 6),
+        "alpha":         alpha,
+        "reject_H0":     reject,
+        "conclusion":    (
+            f"{'REJECT' if reject else 'FAIL TO REJECT'} H₀. "
+            f"There {'IS' if reject else 'IS NOT'} a significant difference "
+            f"between {label1} and {label2}."
+        ),
+    }
+#Anova
+def one_way_anova(*groups, labels: list = None, alpha: float = 0.05) -> dict:
+    if labels is None:
+        labels = [f"Group {i+1}" for i in range(len(groups))]
+    
+    f_stat, p_value = f_oneway(*groups)
+    reject = p_value < alpha
+    #Summary stats per group
+    group_stats = []
+    for label,grp in zip(labels, groups):
+        group_stats.append({
+            "sector": label,
+            "n": len(grp),
+            "mean": round(np.mean(grp), 6),
+            "std": round(np.std(grp, ddof=1), 6),
+            
+        })
+    #Effect size (eta squared)
+    grand_mean  = np.mean(np.concatenate(groups))
+    ss_between  = sum(len(g) * (np.mean(g) - grand_mean)**2 for g in groups)
+    ss_total    = sum(np.sum((g - grand_mean)**2) for g in groups)
+    eta_squared = ss_between / ss_total if ss_total != 0 else 0
+    return {
+        "test":         "One-Way ANOVA",
+        "f_statistic":  round(f_stat, 4),
+        "p_value":      round(p_value, 6),
+        "alpha":        alpha,
+        "eta_squared":  round(eta_squared, 4),
+        "effect_size":  "Large" if eta_squared > 0.14 else "Medium" if eta_squared > 0.06 else "Small",
+        "group_stats":  group_stats,
+        "reject_H0":    reject,
+        "conclusion":   (
+            f"{'REJECT' if reject else 'FAIL TO REJECT'} H₀. "
+            f"Sector returns {'ARE' if reject else 'ARE NOT'} significantly different."
+        ),
+    }
