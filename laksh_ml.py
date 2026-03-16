@@ -60,7 +60,7 @@ def train_logistic_regression(df: pd.DataFrame, test_size: float = 0.2, random_s
     y_pred = pipe.predict(X_test)
     y_pred_proba = pipe.predict_proba(X_test)[:, 1]
 
-    tscv = TimeseriesSplit(n_splits=5)
+    tscv = TimeSeriesSplit(n_splits=5)
     cv_acc = cross_val_score(pipe, X, y, cv=tscv, scoring="accuracy")
     cv_auc = cross_val_score(pipe, X, y, cv=tscv, scoring="roc_auc")
 
@@ -177,5 +177,74 @@ def train_ridge_model(df: pd.DataFrame, test_size: float = 0.2) -> dict:
             f"Ridge (α={best_alpha:.3f}) explains {r2*100:.1f}% of return variance. "
             f"RMSE = {rmse*100:.3f}%. "
             f"Top feature: {coef_df.iloc[0]['feature']}."
+        ),
+    }
+
+def train_lasso_model(df: pd.DataFrame, test_size: float = 0.2) -> dict:
+    X = df[FEATURE_COLS].values
+    y = df["return"].shift(-1).dropna().values
+    X = X[:len(y)]
+
+    split = int(len(X) * (1 - test_size))
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
+
+    scaler = StandardScaler()
+    X_train_s = scaler.fit_transform(X_train)
+    X_test_s = scaler.transform(X_test)
+
+    lasso_cv = LassoCV(
+        alphas = np.logspace(-6, 2, 100),
+        cv = TimeSeriesSplit(n_splits=5),
+        max_iter = 5000,
+    )
+    lasso_cv.fit(X_train_s, y_train)
+
+    best_alpha = lasso_cv.alpha_
+    lasso = Lasso(alpha=best_alpha, max_iter=5000)
+    lasso.fit(X_train_s, y_train)
+
+    y_pred = lasso.predict(X_test_s)
+    r2 = r2_score(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+    coef_df = pd.DataFrame({
+        "feature":    FEATURE_COLS,
+        "coefficient": lasso.coef_,
+        "abs_coef":   np.abs(lasso.coef_),
+        "selected":   lasso.coef_ != 0,
+    }).sort_values("abs_coef", ascending=False)
+
+    n_selected = (lasso.coef_ != 0).sum()
+    n_zeroed = (lasso.coef_ == 0).sum()
+
+    alpha_paths = np.logspace(-6, 2, 80)
+    coef_path = []
+    for a in alpha_paths:
+        l = Lasso(alpha=a, max_iter=5000)
+        l.fit(X_train_s, y_train)
+        coef_path.append(l.coef_)
+    coef_path = np.array(coef_path)
+
+    return {
+        "model":        lasso,
+        "scaler":       scaler,
+        "best_alpha":   round(best_alpha, 6),
+        "r2_score":     round(r2, 4),
+        "rmse":         round(rmse, 6),
+        "coef_df":      coef_df,
+        "coef_path":    coef_path,
+        "alpha_path":   alpha_paths,
+        "n_selected":   int(n_selected),
+        "n_zeroed":     int(n_zeroed),
+        "selected_features": list(coef_df[coef_df["selected"]]["feature"]),
+        "y_test":       y_test,
+        "y_pred":       y_pred,
+        "dates_test":   df.index[split:split + len(y_test)],
+        "interpretation": (
+            f"Lasso (α={best_alpha:.5f}) selected {n_selected} out of "
+            f"{len(FEATURE_COLS)} features, zeroing out {n_zeroed}. "
+            f"R² = {r2*100:.1f}%. "
+            f"Key features: {', '.join(list(coef_df[coef_df['selected']]['feature'])[:3])}"
         ),
     }
