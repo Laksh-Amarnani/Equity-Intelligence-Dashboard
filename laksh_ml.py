@@ -37,7 +37,7 @@ def _split_features(df: pd.DataFrame):
 
 # Logistic Regression - Direction Prediction
 
-def train_logistic_regression(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 42) -> dict:
+def train_logistic_model(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 42) -> dict:
     X, y =_split_features(df)
 
     split   = int(len(X) * (1 - test_size))
@@ -266,5 +266,71 @@ def compare_ridge_lasso(ridge_result: dict, lasso_result: dict) -> pd.DataFrame:
         ]
     }
     return pd.DataFrame(data)
+
+def glm_logistic_summary(df: pd.DataFrame) -> object:
+    X = df[FEATURE_COLS].values
+    y = df["target"].values
+
+    scaler = StandardScaler()
+    X_s = scaler.fit_transform(X)
+    X_sm = sm.add_constant(X_s)
+
+    model = sm.Logit(y, X_sm)
+    result = model.fit(method="newton", maxiter=200, disp=False)
+
+    return result
+
+
+def glm_ridge_summary(df: pd.DataFrame) -> pd.DataFrame:
+    X = df[FEATURE_COLS].values
+    y = df["return"].shift(-1).dropna().values
+    X = X[:len(y)]
+
+    scaler = StandardScaler()
+    X_s = scaler.fit_transform(X)
+    X_sm = sm.add_constant(X_s)
+ 
+    model   = sm.OLS(y, X_sm)
+    result  = model.fit()
+ 
+    # Build readable summary table
+    summary = pd.DataFrame({
+        "Feature":    ["const"] + FEATURE_COLS,
+        "Coef":       result.params,
+        "Std Error":  result.bse,
+        "t-stat":     result.tvalues,
+        "p-value":    result.pvalues,
+        "Significant": result.pvalues < 0.05,
+    })
+    return summary
+
+
+ 
+def full_ml_report(df: pd.DataFrame) -> dict:
+    """
+    Run the entire ML pipeline on a stock's feature DataFrame.
+    Returns all model results in one dict — used by the dashboard.
+    """
+    report = {}
+ 
+    print("  → Training Logistic Regression...")
+    report["logistic"]  = train_logistic_model(df)
+ 
+    print("  → Training Ridge Regression...")
+    report["ridge"]     = train_ridge_model(df)
+ 
+    print("  → Training Lasso Regression...")
+    report["lasso"]     = train_lasso_model(df)
+ 
+    report["comparison"] = compare_ridge_lasso(report["ridge"], report["lasso"])
+ 
+    print("  → Fitting Statsmodels GLM for summary...")
+    report["glm_summary"] = glm_logistic_summary(df)
+ 
+    # Latest-row prediction
+    latest = df.iloc[-1]
+    report["tomorrow"]   = predict_tomorrow(report["logistic"], latest)
+ 
+    return report
 
 
