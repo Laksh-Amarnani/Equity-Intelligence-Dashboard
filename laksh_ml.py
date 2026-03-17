@@ -248,3 +248,23 @@ def train_lasso_model(df: pd.DataFrame, test_size: float = 0.2) -> dict:
             f"Key features: {', '.join(list(coef_df[coef_df['selected']]['feature'])[:3])}"
         ),
     }
+
+def compare_ridge_lasso(ridge_result: dict, lasso_result: dict) -> pd.DataFrame:
+    data = {
+        "Metric": ["R² Score", "RMSE", "Best Alpha", "Features Used"],
+        "Ridge": [
+            ridge_result["r2_score"],
+            ridge_result["rmse"],
+            ridge_result["best_alpha"],
+            len(FEATURE_COLS),
+        ],
+        "Lasso": [
+            lasso_result["r2_score"],
+            lasso_result["rmse"],
+            lasso_result["best_alpha"],
+            lasso_result["n_selected"],
+        ]
+    }
+    return pd.DataFrame(data)
+
+
