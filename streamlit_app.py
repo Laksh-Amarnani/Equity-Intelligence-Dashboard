@@ -397,7 +397,7 @@ with tab3:
         </div>""", unsafe_allow_html=True)
 
         from scipy.stats import probplot
-        theoretical_q, sample_q = zip(*probplot(ret1.values)[0])
+        (theoretical_q, sample_q), _ = probplot(ret1.values)
         fig_qq = go.Figure()
         fig_qq.add_trace(go.Scatter(
             x=theoretical_q, y=sample_q,
