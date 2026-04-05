@@ -12,29 +12,36 @@ SECTORS = {
 
 ALL_TICKERS = [t for tickers in SECTORS.values() for t in tickers]
 
+
 def get_price_data(tickers: list, period: str = "2y") -> pd.DataFrame:
     raw = yf.download(tickers, period=period, auto_adjust=True, progress=False)
     if isinstance(raw.columns, pd.MultiIndex):
         prices = raw["Close"]
     else:
-        prices = raw[["Close"]]
+        prices = raw["Close"].to_frame()
         prices.columns = tickers
     prices.dropna(how="all", inplace=True)
     return prices
 
-def get_daily_returns(prices: pd.DataFrame) -> pd.DataFrame:    
+
+def get_daily_returns(prices: pd.DataFrame) -> pd.DataFrame:
+    """Compute daily percentage returns from price DataFrame."""
     return prices.pct_change().dropna()
 
+
 def get_log_returns(prices: pd.DataFrame) -> pd.DataFrame:
+    """Compute log returns — more useful for statistical tests."""
     return np.log(prices / prices.shift(1)).dropna()
+
 
 def get_sector_returns(period: str = "2y") -> dict:
     sector_avg = {}
     for sector, tickers in SECTORS.items():
         prices = get_price_data(tickers, period=period)
         returns = get_daily_returns(prices)
-        sector_avg[sector] = returns.mean(axis=1)
+        sector_avg[sector] = returns.mean(axis=1)   # avg return across sector
     return sector_avg
+
 
 def get_stock_info(ticker: str) -> dict:
     try:
@@ -50,35 +57,41 @@ def get_stock_info(ticker: str) -> dict:
     except Exception:
         return {}
 
+
 def engineer_features(ticker: str, period: str = "2y") -> pd.DataFrame:
     prices = get_price_data([ticker], period=period)
     df = pd.DataFrame()
-    df["price"] = prices[ticker]
-    df["volume"] = yf.download(ticker, period=period, auto_adjust=False, progress=False)["Volume"]
+    raw = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+    df["close"] = raw["Close"].squeeze()
+    df["volume"] = raw["Volume"].squeeze()
 
     df["return"] = df["close"].pct_change()
     df["log_return"] = np.log(df["close"] / df["close"].shift(1))
 
+    # Lagged returns
     for lag in [1, 2, 3, 5]:
         df[f"lag_{lag}"] = df["return"].shift(lag)
 
-    df["rolling_mean_5"] = df["return"].rolling(5).mean()
-    df["rolling_std_5"] = df["return"].rolling(5).std()
+    # Rolling statistics
+    df["rolling_mean_5"]  = df["return"].rolling(5).mean()
+    df["rolling_std_5"]   = df["return"].rolling(5).std()
     df["rolling_mean_20"] = df["return"].rolling(20).mean()
-    df["rolling_std_20"] = df["return"].rolling(20).std()
+    df["rolling_std_20"]  = df["return"].rolling(20).std()
 
-    delta = df["close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rs = gain / loss
+    # RSI (14-day)
+    delta     = df["close"].diff()
+    gain      = delta.clip(lower=0).rolling(14).mean()
+    loss      = (-delta.clip(upper=0)).rolling(14).mean()
+    rs        = gain / loss
     df["rsi"] = 100 - (100 / (1 + rs))
 
     df["volume_ratio"] = df["volume"] / df["volume"].rolling(20).mean()
 
-    df["ma_20"] = df["close"].rolling(20).mean()
-    df["ma_50"] = df["close"].rolling(50).mean()
-    df["dist_ma20"] = (df["close"] - df["ma_20"]) / df["ma_20"]
-    df["dist_ma50"] = (df["close"] - df["ma_50"]) / df["ma_50"]
+    # Price distance from moving averages
+    df["ma_20"]       = df["close"].rolling(20).mean()
+    df["ma_50"]       = df["close"].rolling(50).mean()
+    df["dist_ma20"]   = (df["close"] - df["ma_20"]) / df["ma_20"]
+    df["dist_ma50"]   = (df["close"] - df["ma_50"]) / df["ma_50"]
 
     df["target"] = (df["return"].shift(-1) > 0).astype(int)
 
